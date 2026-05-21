@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ICU Infusion">
+<meta name="theme-color" content="#050A0F">
+<title>ICU Infusion Monitor</title>
+<style>
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+html, body {
+  height: 100%; width: 100%;
+  background: #050A0F;
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  color: #AACCDD;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  overflow: hidden;
+}
+input { -webkit-user-select: auto; user-select: auto; font-family: Arial, sans-serif; }
+button { font-family: Arial, sans-serif; touch-action: manipulation; cursor: pointer; }
+button:active { transform: scale(0.94); transition: transform 0.05s; }
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+(function() {
+'use strict';
+
+// ════════════════════════════════════════════════════════════════════════
+// DRUG PROTOCOLS
+// ════════════════════════════════════════════════════════════════════════
+var DRUGS = [
+  { id: "epi", name: "Epinephrine", abbr: "EPI",
+    unit: "mcg/kg/min", weight_based: true, step: 0.01, min: 0, max: 0.3, dec: 2,
+    color: "#FF6B6B",
+    mixes: [
+      { conc: 20, conc_unit: "mcg", label: "<20 mcg/cc> Epi 2@ + 5DW 98 cc [total 100 cc]" },
+      { conc: 20, conc_unit: "mcg", label: "<20 mcg/cc> Epi 4@ + 5DW 196 cc [total 200 cc]" },
+      { conc: 60, conc_unit: "mcg", label: "<60 mcg/cc> Epi 6@ + 5DW 94 cc [total 100 cc]" }
+    ]
+  },
+  { id: "norepi", name: "Norepinephrine", abbr: "NE",
+    unit: "mcg/kg/min", weight_based: true, step: 0.01, min: 0, max: 0.3, dec: 2,
+    color: "#FF9F66",
+    mixes: [
+      { conc: 20, conc_unit: "mcg", label: "<20 mcg/cc> Norepi 1@ + ONLY D5W 196 cc [total 200 cc]" },
+      { conc: 60, conc_unit: "mcg", label: "<60 mcg/cc> Norepi 3@ + 5DW 188 cc [total 200 cc]" }
+    ]
+  },
+  { id: "dopa", name: "Dopamine", abbr: "DOPA",
+    unit: "mcg/kg/min", weight_based: true, step: 0.5, min: 0, max: 20, dec: 1,
+    color: "#FFCC55",
+    mixes: [
+      { conc: 2, conc_unit: "mg", label: "<2 mg/cc> Dopa 2@ + 5DW 240 cc [total 250 cc]  (or Dopamix)" }
+    ]
+  },
+  { id: "dobu", name: "Dobutamine", abbr: "DOBU",
+    unit: "mcg/kg/min", weight_based: true, step: 0.5, min: 0, max: 20, dec: 1,
+    color: "#FFEE77",
+    mixes: [
+      { conc: 2, conc_unit: "mg", label: "<2 mg/cc> Dobuta 2@ + 5DW 240 cc [total 250 cc]" }
+    ]
+  },
+  { id: "mrn", name: "Milrinone", abbr: "MRN",
+    unit: "mcg/kg/min", weight_based: true, step: 0.1, min: 0, max: 1.5, dec: 1,
+    color: "#7EC8E3",
+    mixes: [
+      { conc: 0.25, conc_unit: "mg", label: "<0.25 mg/cc> Milrinone 5@ + N/S 150 cc [total 200 cc]" }
+    ]
+  },
+  { id: "ntg", name: "Nitroglycerin", abbr: "NTG",
+    unit: "mcg/kg/min", weight_based: true, step: 0.1, min: 0, max: 5, dec: 1,
+    color: "#99EE99",
+    mixes: [
+      { conc: 0.25, conc_unit: "mg", label: "<0.25 mg/cc> NTG 1vial + N/S 150 cc [total 200 cc]" }
+    ]
+  },
+  { id: "nica", name: "Nicardipine", abbr: "NICA",
+    unit: "mcg/kg/min", weight_based: true, step: 0.1, min: 0, max: 5, dec: 1,
+    color: "#EEAAEE",
+    mixes: [
+      { conc: 0.2, conc_unit: "mg", label: "<0.2 mg/cc> Nicar 5@ + N/S 200 cc [total 250 cc]" },
+      { conc: 0.2, conc_unit: "mg", label: "<0.2 mg/cc> Nicar 10@ + N/S 400 cc [total 500 cc]" }
+    ]
+  },
+  { id: "dex", name: "Dexmedetomidine", abbr: "DEX",
+    unit: "mcg/kg/min", weight_based: true, step: 0.1, min: 0, max: 1.0, dec: 1,
+    color: "#99CCFF",
+    mixes: [
+      { conc: 4, conc_unit: "mcg", label: "<4 mcg/cc> Precedex 1vial + N/S 48 cc [total 50 cc]" },
+      { conc: 4, conc_unit: "mcg", label: "<4 mcg/cc> Precedex 2vial + N/S 96 cc [total 100 cc]" }
+    ]
+  },
+  { id: "remi", name: "Remifentanil", abbr: "REMI",
+    unit: "mcg/kg/min", weight_based: true, step: 0.01, min: 0, max: 0.1, dec: 2,
+    color: "#FFAACC",
+    mixes: [
+      { conc: 50, conc_unit: "mcg", label: "<50 mcg/cc> Remifentanil 2vial + N/S 40 cc [total 40 cc]" }
+    ]
+  },
+  { id: "esmolol", name: "Esmolol", abbr: "ESMOLOL",
+    unit: "mcg/kg/min", weight_based: true, step: 10, min: 0, max: 200, dec: 0,
+    color: "#A0E0CC",
+    mixes: [
+      { conc: 10, conc_unit: "mg", label: "<10 mg/cc> Esmolol 2.5g + 5DW 240 mL [total 250 cc]" }
+    ]
+  },
+  { id: "amo", name: "Amiodarone", abbr: "AMO",
+    unit: "mg/day", weight_based: false, step: 60, min: 0, max: 1440, dec: 0,
+    color: "#FFCCAA",
+    mixes: [
+      { conc: 1.8, conc_unit: "mg", label: "<1.8 mg/cc> Amiodarone 3@ + ONLY 5DW 241 cc [total 250 cc]" },
+      { conc: 1.8, conc_unit: "mg", label: "<1.8 mg/cc> Amiodarone 6@ + ONLY 5DW 482 cc [total 500 cc]" }
+    ]
+  },
+  { id: "lid", name: "Lidocaine", abbr: "LID",
+    unit: "mg/hr", weight_based: false, step: 10, min: 0, max: 300, dec: 0,
+    color: "#CCAAFF",
+    mixes: [
+      { conc: 10, conc_unit: "mg", label: "<10 mg/cc> 2% Lidocaine 5@ + N/S 100 cc [total 200 cc]" },
+      { conc: 10, conc_unit: "mg", label: "<10 mg/cc> 2% Lidocaine 2@ + N/S 40 cc [total 80 cc]" },
+      { conc: 10, conc_unit: "mg", label: "<10 mg/cc> 2% Lidocaine 3@ + N/S 60 cc [total 120 cc]" }
+    ]
+  },
+  { id: "rc", name: "Renal cocktail", abbr: "R/C",
+    unit: "cc/hr", weight_based: false, step: 0.5, min: 0, max: 20, dec: 1,
+    color: "#FFDD99",
+    mixes: [
+      { conc: 2, conc_unit: "mg", label: "<2 mg/cc Lasix> 20% Mannitol 40 cc + Lasix 5@ [total 50 cc]" }
+    ]
+  }
+];
+
+// ════════════════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════════════════
+var state = {
+  mode: "display",
+  active: {},
+  weight: 70,
+  isLandscape: window.innerWidth > window.innerHeight
+};
+
+function saveState() {
+  try {
+    localStorage.setItem('icu-infusion-state', JSON.stringify({
+      active: state.active,
+      weight: state.weight
+    }));
+  } catch (e) {}
+}
+
+function loadState() {
+  try {
+    var raw = localStorage.getItem('icu-infusion-state');
+    if (!raw) return;
+    var s = JSON.parse(raw);
+    if (s.active && typeof s.active === 'object') state.active = s.active;
+    if (typeof s.weight === 'number' && s.weight > 0) state.weight = s.weight;
+  } catch (e) {}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════════════════════════════
+function roundStep(v, step) {
+  var r = Math.round(v / step) * step;
+  return Math.round(r * 10000) / 10000;
+}
+
+function calcCcHr(dose, drug, mix, weight) {
+  if (!mix) return null;
+  if (drug.weight_based && (!weight || weight <= 0)) return null;
+  if (dose === 0) return 0;
+  if (drug.unit === "cc/hr") return dose;
+
+  var mcgPerMin;
+  switch (drug.unit) {
+    case "mcg/kg/min": mcgPerMin = dose * weight; break;
+    case "mg/min":     mcgPerMin = dose * 1000; break;
+    case "mg/hr":      mcgPerMin = (dose * 1000) / 60; break;
+    case "mg/day":     mcgPerMin = (dose * 1000) / 1440; break;
+    case "mcg/min":    mcgPerMin = dose; break;
+    default: return null;
+  }
+  var mcgPerMl = mix.conc_unit === "mg" ? mix.conc * 1000 : mix.conc;
+  return (mcgPerMin * 60) / mcgPerMl;
+}
+
+function getSizes(perCol) {
+  if (perCol <= 1) return { card: 200, dose: 120, abbr: 32, name: 15, unit: 17, cc: 26, btn: 82, btnF: 38, mix: 14 };
+  if (perCol === 2) return { card: 160, dose: 92,  abbr: 28, name: 14, unit: 15, cc: 21, btn: 70, btnF: 32, mix: 13 };
+  if (perCol === 3) return { card: 124, dose: 70,  abbr: 24, name: 13, unit: 13, cc: 17, btn: 58, btnF: 26, mix: 12 };
+  if (perCol === 4) return { card: 102, dose: 58,  abbr: 20, name: 12, unit: 12, cc: 15, btn: 48, btnF: 22, mix: 11 };
+  if (perCol === 5) return { card: 86,  dose: 48,  abbr: 18, name: 11, unit: 11, cc: 13, btn: 42, btnF: 20, mix: 11 };
+  return                  { card: 76,  dose: 42,  abbr: 16, name: 11, unit: 11, cc: 12, btn: 38, btnF: 18, mix: 11 };
+}
+
+function getTime() {
+  var n = new Date();
+  return String(n.getHours()).padStart(2, "0") + ":" +
+         String(n.getMinutes()).padStart(2, "0") + ":" +
+         String(n.getSeconds()).padStart(2, "0");
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// ACTIONS (called via inline onclick)
+// ════════════════════════════════════════════════════════════════════════
+window._adj = function(id, dir) {
+  var drug = DRUGS.find(function(d) { return d.id === id; });
+  var cur = (state.active[id] && state.active[id].dose) || 0;
+  var next = roundStep(Math.max(drug.min, Math.min(drug.max, cur + dir * drug.step)), drug.step);
+  state.active[id] = Object.assign({}, state.active[id], { dose: parseFloat(next.toFixed(drug.dec)) });
+  saveState();
+  render();
+};
+
+window._openManage = function() { state.mode = "manage"; render(); };
+window._closeManage = function() { state.mode = "display"; render(); };
+
+window._toggleDrug = function(id) {
+  if (state.active[id] !== undefined) delete state.active[id];
+  else state.active[id] = { dose: 0, mixIdx: 0 };
+  saveState();
+  renderManage();
+};
+
+window._updateWeight = function(v) {
+  var n = parseFloat(v);
+  if (!isNaN(n) && n > 0) {
+    state.weight = n;
+    saveState();
+  }
+};
+
+window._openMixModal = function(id) { showMixModal(id); };
+
+window._closeMixModal = function() {
+  var ov = document.getElementById('mix-modal-overlay');
+  if (ov) ov.remove();
+};
+
+window._selectMix = function(id, idx) {
+  state.active[id] = Object.assign({}, state.active[id], { mixIdx: idx });
+  saveState();
+  var ov = document.getElementById('mix-modal-overlay');
+  if (ov) ov.remove();
+  render();
+};
+
+// ════════════════════════════════════════════════════════════════════════
+// RENDER
+// ════════════════════════════════════════════════════════════════════════
+function render() {
+  if (state.mode === "manage") renderManage();
+  else renderDisplay();
+}
+
+function renderDisplay() {
+  var drugs = DRUGS.filter(function(d) { return state.active[d.id] !== undefined; });
+  var n = drugs.length;
+  var cols = !state.isLandscape ? 1 : (n <= 1 ? 1 : 2);
+  var perCol = n === 0 ? 1 : Math.ceil(n / cols);
+  var s = getSizes(perCol);
+
+  var cards = drugs.map(function(drug) {
+    var st = state.active[drug.id];
+    var dose = st.dose;
+    var zero = dose === 0;
+    var mix = drug.mixes[st.mixIdx] || drug.mixes[0];
+    var cc = calcCcHr(dose, drug, mix, state.weight);
+    var hasMulti = drug.mixes.length > 1;
+
+    var ccLine = '';
+    if (drug.unit !== "cc/hr") {
+      if (cc === null) {
+        ccLine = '<div style="font-size:' + s.cc + 'px;color:#5E7A8C;margin-top:3px;font-style:italic;">&rarr; &mdash; cc/hr</div>';
+      } else {
+        ccLine = '<div style="font-size:' + s.cc + 'px;color:' + (zero ? "#5E7A8C" : "#88DDFF") + ';font-weight:bold;margin-top:4px;letter-spacing:0.5px;font-variant-numeric:tabular-nums;">&rarr; ' + cc.toFixed(1) + ' cc/hr</div>';
+      }
+    }
+
+    var mixBadge = hasMulti ? '<span style="font-size:' + s.mix + 'px;color:' + drug.color + ';font-weight:bold;flex-shrink:0;background:' + drug.color + '22;padding:2px 8px;border-radius:5px;border:1px solid ' + drug.color + '66;">변경 &#9662;</span>' : '';
+
+    return '<div style="display:flex;flex-direction:column;border-radius:11px;'
+      + 'background:' + (zero ? "#0A1620" : "#0E1E2A") + ';'
+      + 'border:1px solid ' + (zero ? "#2A4055" : drug.color + "60") + ';'
+      + 'min-height:' + s.card + 'px;overflow:hidden;">'
+      + '<div style="display:flex;align-items:center;padding:8px 10px;gap:8px;flex:1;">'
+        + '<div style="flex:1;min-width:0;overflow:hidden;">'
+          + '<div style="font-size:' + s.abbr + 'px;font-weight:bold;'
+            + 'color:' + (zero ? "#7E9DB3" : drug.color) + ';'
+            + 'letter-spacing:1.5px;line-height:1.1;'
+            + 'text-shadow:' + (zero ? "none" : "0 0 18px " + drug.color + "55") + ';'
+            + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+            + esc(drug.abbr) + '</div>'
+          + '<div style="font-size:' + s.name + 'px;font-weight:bold;'
+            + 'color:' + (zero ? "#5E7A8C" : drug.color + "CC") + ';'
+            + 'letter-spacing:0.5px;margin-top:3px;'
+            + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+            + esc(drug.name) + '</div>'
+        + '</div>'
+        + '<div style="flex:1.6;text-align:center;min-width:0;">'
+          + '<div style="font-size:' + s.dose + 'px;font-weight:bold;'
+            + 'color:' + (zero ? "#5E7A8C" : "#FFFFFF") + ';'
+            + 'letter-spacing:-1px;line-height:1;font-variant-numeric:tabular-nums;'
+            + 'text-shadow:' + (zero ? "none" : "0 0 24px rgba(255,255,255,0.25)") + ';">'
+            + (zero ? "&mdash;" : dose.toFixed(drug.dec)) + '</div>'
+          + '<div style="font-size:' + s.unit + 'px;color:#88A6BC;letter-spacing:1px;margin-top:4px;font-weight:bold;">'
+            + esc(drug.unit) + '</div>'
+          + ccLine
+        + '</div>'
+        + '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">'
+          + '<button onclick="_adj(\'' + drug.id + '\',1)" style="'
+            + 'width:' + s.btn + 'px;height:' + s.btn + 'px;border-radius:10px;'
+            + 'background:' + drug.color + '33;'
+            + 'border:2px solid ' + drug.color + 'AA;'
+            + 'color:' + drug.color + ';'
+            + 'font-size:' + s.btnF + 'px;font-weight:bold;'
+            + 'display:flex;align-items:center;justify-content:center;line-height:1;">&#9650;</button>'
+          + '<button onclick="_adj(\'' + drug.id + '\',-1)" style="'
+            + 'width:' + s.btn + 'px;height:' + s.btn + 'px;border-radius:10px;'
+            + 'background:#1A2A3A;border:2px solid #4A6A82;color:#88A6BC;'
+            + 'font-size:' + s.btnF + 'px;font-weight:bold;'
+            + 'display:flex;align-items:center;justify-content:center;line-height:1;">&#9660;</button>'
+        + '</div>'
+      + '</div>'
+      + '<div ' + (hasMulti ? 'onclick="_openMixModal(\'' + drug.id + '\')"' : '') + ' style="'
+        + 'padding:5px 12px;border-top:1px solid ' + (zero ? "#1E3040" : drug.color + "33") + ';'
+        + 'background:' + (hasMulti ? "#0A1620" : "transparent") + ';'
+        + 'cursor:' + (hasMulti ? "pointer" : "default") + ';'
+        + 'display:flex;align-items:center;gap:8px;">'
+        + '<span style="font-size:' + s.mix + 'px;color:' + (zero ? "#7090A6" : drug.color + "DD") + ';'
+          + 'font-weight:bold;letter-spacing:0.3px;flex:1;'
+          + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+          + 'MIX: ' + esc(mix.label) + '</span>'
+        + mixBadge
+      + '</div>'
+    + '</div>';
+  }).join("");
+
+  var emptyState = '<div style="text-align:center;color:#506578;">'
+    + '<div style="font-size:56px;margin-bottom:16px;font-weight:bold;color:#3A5A7A;">＋</div>'
+    + '<div style="font-size:20px;letter-spacing:2px;font-weight:bold;color:#7090A6;">투약 중인 약물 없음</div>'
+    + '<div style="font-size:14px;color:#506578;margin-top:10px;">상단 설정 버튼을 눌러 약물과 체중을 입력하세요</div>'
+    + '</div>';
+
+  document.getElementById("app").innerHTML =
+    '<div style="display:flex;flex-direction:column;height:100vh;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;'
+      + 'padding:10px 16px;border-bottom:1px solid #1E3040;background:#0A1620;flex-shrink:0;">'
+      + '<div style="display:flex;align-items:center;gap:10px;">'
+        + '<div style="width:9px;height:9px;border-radius:50%;background:#00FF88;box-shadow:0 0 8px #00FF88;animation:blink 2s ease-in-out infinite;"></div>'
+        + '<span style="color:#00DD77;font-size:13px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;">ICU Infusion Monitor</span>'
+      + '</div>'
+      + '<div style="display:flex;align-items:center;gap:14px;">'
+        + '<span style="font-size:13px;color:#99BBCC;font-weight:bold;letter-spacing:1px;">'
+          + '체중 <span style="color:#FFFFFF;">' + state.weight + '</span> kg</span>'
+        + '<span id="clock" style="color:#AACCDD;font-size:17px;font-weight:bold;letter-spacing:2px;">' + getTime() + '</span>'
+        + '<button onclick="_openManage()" style="background:transparent;border:1px solid #4A6A82;color:#AACCDD;padding:6px 14px;border-radius:7px;font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;">&#9881; 설정</button>'
+      + '</div>'
+    + '</div>'
+    + '<div class="scroll" style="flex:1;display:' + (n === 0 ? "flex" : "grid") + ';'
+      + 'grid-template-columns:' + (cols === 1 ? "1fr" : "repeat(2,1fr)") + ';'
+      + 'gap:5px;padding:' + (n === 0 ? "0" : "6px") + ';'
+      + 'justify-content:' + (n === 0 ? "center" : "stretch") + ';'
+      + 'align-items:' + (n === 0 ? "center" : "stretch") + ';">'
+      + (n === 0 ? emptyState : cards)
+    + '</div>'
+    + '</div>';
+}
+
+function renderManage() {
+  var rows = DRUGS.map(function(drug) {
+    var on = state.active[drug.id] !== undefined;
+    var badges = '';
+    if (!drug.weight_based) {
+      badges += '<span style="margin-left:8px;font-size:10px;color:#FFCC88;background:#FFCC8822;border:1px solid #FFCC8866;padding:2px 6px;border-radius:4px;letter-spacing:0.5px;text-transform:uppercase;">체중 무관</span>';
+    }
+    if (drug.mixes.length > 1) {
+      badges += '<span style="margin-left:6px;font-size:10px;color:#88DDFF;background:#88DDFF22;border:1px solid #88DDFF66;padding:2px 6px;border-radius:4px;letter-spacing:0.5px;">Mix ' + drug.mixes.length + '종</span>';
+    }
+    var doseDisplay = on ? '<div style="font-size:14px;color:' + drug.color + ';font-weight:bold;letter-spacing:1px;">' + (state.active[drug.id].dose || 0).toFixed(drug.dec) + '</div>' : '';
+
+    return '<div onclick="_toggleDrug(\'' + drug.id + '\')" style="'
+      + 'display:flex;align-items:center;gap:14px;padding:14px 18px;'
+      + 'border-radius:10px;margin-bottom:7px;cursor:pointer;'
+      + 'border:1px solid ' + (on ? drug.color + "77" : "#1E3040") + ';'
+      + 'background:' + (on ? drug.color + "18" : "#0A1620") + ';">'
+      + '<div style="width:24px;height:24px;border-radius:5px;flex-shrink:0;'
+        + 'border:2px solid ' + (on ? drug.color : "#4A6A82") + ';'
+        + 'background:' + (on ? drug.color : "transparent") + ';'
+        + 'display:flex;align-items:center;justify-content:center;">'
+        + (on ? '<span style="color:#000;font-size:15px;font-weight:bold;">&#10003;</span>' : '')
+      + '</div>'
+      + '<div style="flex:1;">'
+        + '<div style="font-size:16px;font-weight:bold;color:' + (on ? drug.color : "#AACCDD") + ';letter-spacing:1px;">'
+          + esc(drug.name) + ' <span style="opacity:0.7;font-size:14px;">(' + esc(drug.abbr) + ')</span>' + badges
+        + '</div>'
+        + '<div style="font-size:12px;color:#7090A6;margin-top:3px;font-weight:bold;">'
+          + 'step &plusmn;' + drug.step + ' &middot; max ' + drug.max + ' ' + esc(drug.unit)
+        + '</div>'
+      + '</div>'
+      + doseDisplay
+      + '</div>';
+  }).join("");
+
+  document.getElementById("app").innerHTML =
+    '<div style="height:100vh;display:flex;flex-direction:column;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;'
+      + 'padding:16px 18px;border-bottom:1px solid #1E3040;background:#0A1620;flex-shrink:0;">'
+      + '<span style="font-size:14px;font-weight:bold;letter-spacing:2px;color:#AACCDD;text-transform:uppercase;">설정</span>'
+      + '<button onclick="_closeManage()" style="background:#005533;border:1px solid #00FF8866;color:#00FF88;padding:9px 24px;border-radius:8px;font-size:14px;font-weight:bold;letter-spacing:1px;">완료 &#10003;</button>'
+    + '</div>'
+    + '<div class="scroll" style="flex:1;padding:14px 16px 24px;">'
+    + '<div style="max-width:900px;margin:0 auto;">'
+      + '<div style="background:#0E1E2A;padding:16px 18px;border-radius:12px;margin-bottom:18px;border:1px solid #2A4A5A;">'
+        + '<div style="font-size:12px;color:#99BBCC;font-weight:bold;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">환자 체중</div>'
+        + '<div style="display:flex;align-items:center;gap:12px;">'
+          + '<input type="number" value="' + state.weight + '" min="1" max="300" step="0.1" inputmode="decimal" '
+            + 'oninput="_updateWeight(this.value)" '
+            + 'style="flex:1;padding:14px 16px;font-size:26px;background:#050A0F;border:2px solid #4A6A82;color:#FFFFFF;border-radius:9px;font-family:Arial,sans-serif;font-weight:bold;text-align:right;outline:none;" />'
+          + '<span style="font-size:22px;color:#AACCDD;font-weight:bold;">kg</span>'
+        + '</div>'
+        + '<div style="font-size:11px;color:#7090A6;margin-top:8px;font-style:italic;">'
+          + '※ 일부 약물(AMO, LID, R/C)은 체중에 무관하게 절대량으로 투약합니다'
+        + '</div>'
+      + '</div>'
+      + '<div style="font-size:12px;color:#7090A6;letter-spacing:1.5px;text-transform:uppercase;font-weight:bold;margin-bottom:10px;padding-left:4px;">'
+        + '투약 약물 선택 (복수 선택 가능)'
+      + '</div>'
+      + rows
+    + '</div>'
+    + '</div>'
+    + '</div>';
+}
+
+function showMixModal(id) {
+  var drug = DRUGS.find(function(d) { return d.id === id; });
+  if (!drug) return;
+  var currentIdx = (state.active[id] && state.active[id].mixIdx) || 0;
+
+  var old = document.getElementById('mix-modal-overlay');
+  if (old) old.remove();
+
+  var overlay = document.createElement('div');
+  overlay.id = 'mix-modal-overlay';
+  overlay.onclick = function() { window._closeMixModal(); };
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;';
+
+  var options = drug.mixes.map(function(mix, idx) {
+    var isCur = idx === currentIdx;
+    return '<div onclick="event.stopPropagation();_selectMix(\'' + drug.id + '\',' + idx + ');" style="'
+      + 'padding:16px 18px;border-radius:11px;margin-bottom:8px;cursor:pointer;'
+      + 'border:2px solid ' + (isCur ? drug.color : "#2A4055") + ';'
+      + 'background:' + (isCur ? drug.color + "22" : "#0A1620") + ';'
+      + 'display:flex;align-items:center;gap:14px;">'
+      + '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;'
+        + 'border:2px solid ' + (isCur ? drug.color : "#4A6A82") + ';'
+        + 'background:' + (isCur ? drug.color : "transparent") + ';'
+        + 'display:flex;align-items:center;justify-content:center;font-weight:bold;color:#000;font-size:15px;">'
+        + (isCur ? '&#10003;' : '')
+      + '</div>'
+      + '<div style="flex:1;font-size:16px;font-weight:bold;color:' + (isCur ? drug.color : "#CCDDEE") + ';letter-spacing:0.5px;line-height:1.4;">'
+        + esc(mix.label)
+      + '</div>'
+    + '</div>';
+  }).join("");
+
+  overlay.innerHTML = '<div onclick="event.stopPropagation()" style="'
+    + 'background:#0E1E2A;border-radius:14px;border:2px solid ' + drug.color + '88;'
+    + 'width:100%;max-width:720px;max-height:85vh;'
+    + 'display:flex;flex-direction:column;overflow:hidden;font-family:Arial,sans-serif;">'
+    + '<div style="padding:16px 20px;border-bottom:1px solid #1E3040;background:#0A1620;display:flex;justify-content:space-between;align-items:center;">'
+      + '<div>'
+        + '<div style="font-size:12px;color:#88A6BC;font-weight:bold;letter-spacing:1.5px;text-transform:uppercase;">Mix Protocol 선택</div>'
+        + '<div style="font-size:22px;color:' + drug.color + ';font-weight:bold;margin-top:4px;letter-spacing:1px;">'
+          + esc(drug.name) + ' (' + esc(drug.abbr) + ')</div>'
+      + '</div>'
+      + '<button onclick="event.stopPropagation();_closeMixModal()" style="background:#1A2A3A;border:1px solid #4A6A82;color:#AACCDD;padding:8px 16px;border-radius:7px;font-size:13px;font-weight:bold;letter-spacing:1px;">취소 &#10005;</button>'
+    + '</div>'
+    + '<div class="scroll" style="padding:14px 16px;flex:1;">'
+    + options
+    + '</div>'
+    + '</div>';
+
+  document.body.appendChild(overlay);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════════════
+loadState();
+
+window.addEventListener('resize', function() {
+  state.isLandscape = window.innerWidth > window.innerHeight;
+  if (state.mode === "display") renderDisplay();
+});
+
+window.addEventListener('orientationchange', function() {
+  setTimeout(function() {
+    state.isLandscape = window.innerWidth > window.innerHeight;
+    if (state.mode === "display") renderDisplay();
+  }, 100);
+});
+
+setInterval(function() {
+  var c = document.getElementById('clock');
+  if (c) c.textContent = getTime();
+}, 1000);
+
+render();
+
+})();
+</script>
+</body>
+</html>
